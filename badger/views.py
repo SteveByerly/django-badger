@@ -45,7 +45,8 @@ from .models import (Badge, Award, Nomination, DeferredAward,
                      Progress, BadgeAwardNotAllowedException,
                      BadgeAlreadyAwardedException,
                      NominationApproveNotAllowedException,
-                     NominationAcceptNotAllowedException)
+                     NominationAcceptNotAllowedException,
+                     SITE_ISSUER)
 from .forms import (BadgeAwardForm, DeferredAwardGrantForm,
                     DeferredAwardMultipleGrantForm, BadgeNewForm,
                     BadgeEditForm, BadgeSubmitNominationForm)
@@ -61,6 +62,10 @@ def home(request):
         badge_list=badge_list, award_list=award_list, badge_tags=badge_tags
     ), context_instance=RequestContext(request))
 
+def site_issuer(request):
+    resp = HttpResponse(json.dumps(SITE_ISSUER))
+    resp['Content-Type'] = 'application/json'
+    return resp
 
 class BadgesListView(ListView):
     """Badges list page"""

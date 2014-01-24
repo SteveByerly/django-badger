@@ -5,6 +5,7 @@ import hashlib
 
 from datetime import datetime, timedelta, tzinfo
 from time import time, gmtime, strftime
+import calendar
 
 import os.path
 from os.path import dirname
@@ -84,10 +85,10 @@ OBI_VERSION = "0.5.0"
 IMG_MAX_SIZE = getattr(settings, "BADGER_IMG_MAX_SIZE", (256, 256))
 
 SITE_ISSUER = getattr(settings, 'BADGER_SITE_ISSUER', {
-    "origin": "http://mozilla.org",
-    "name": "Badger",
-    "org": "Mozilla",
-    "contact": "lorchard@mozilla.com"
+    "name": "Example",
+    "url": "http://example.com",
+    "description": "This is an example organization",
+    "email": "me@example.com"
 })
 
 # Set up a file system for badge uploads that can be kept separate from the
@@ -443,7 +444,9 @@ class Badge(models.Model):
     def __unicode__(self):
         return self.title
 
-    def get_absolute_url(self):
+    def get_absolute_url(self, format='html'):
+        if format == 'json':
+            return reverse('badger.detail_json', args=(self.slug,))
         return reverse('badger.views.detail', args=(self.slug,))
 
     def get_upload_meta(self):
@@ -650,31 +653,20 @@ class Badge(models.Model):
         else:
             base_url = 'http://%s' % (Site.objects.get_current().domain,)
 
-        # see: https://github.com/brianlovesdata/openbadges/wiki/Assertions
-        if not self.creator:
-            issuer = SITE_ISSUER
-        else:
-            issuer = {
-                # TODO: Get from user profile instead?
-                "origin": urljoin(base_url, self.creator.get_absolute_url()),
-                "name": self.creator.username,
-                "contact": self.creator.email
-            }
-
         data = {
-            # The version of the spec/hub this manifest is compatible with. Use
-            # "0.5.0" for the beta.
-            "version": OBI_VERSION,
             # TODO: truncate more intelligently
             "name": self.title[:128],
             # TODO: truncate more intelligently
             "description": self.description[:128] or self.title[:128],
             "criteria": urljoin(base_url, self.get_absolute_url()),
-            "issuer": issuer
+            "issuer": urljoin(base_url, reverse('badger.site_issuer'))
         }
 
         image_url = self.image and self.image.url or DEFAULT_BADGE_IMAGE_URL
         data['image'] = urljoin(base_url, image_url)
+
+        # TODO: tags
+        # TODO: alignment
 
         return data
 
@@ -717,7 +709,9 @@ class Award(models.Model):
         return u'Award of %s to %s%s' % (self.badge, self.user, by)
 
     @models.permalink
-    def get_absolute_url(self):
+    def get_absolute_url(self, format='html'):
+        if format == 'json':
+            return ('badger.award_detail_json', (self.badge.slug, self.pk))
         return ('badger.views.award_detail', (self.badge.slug, self.pk))
 
     def get_upload_meta(self):
@@ -785,40 +779,38 @@ class Award(models.Model):
         super(Award, self).delete()
 
     def as_obi_assertion(self, request=None):
-        badge_data = self.badge.as_obi_serialization(request)
-
+        """Build a representation of this award as an OBI assertion"""
         if request:
             base_url = request.build_absolute_uri('/')[:-1]
         else:
             base_url = 'http://%s' % (Site.objects.get_current().domain,)
 
-        # If this award has a creator (ie. not system-issued), tweak the issuer
-        # data to reflect award creator.
-        # TODO: Is this actually a good idea? Or should issuer be site-wide
-        if self.creator:
-            badge_data['issuer'] = {
-                # TODO: Get from user profile instead?
-                "origin": base_url,
-                "name": self.creator.username,
-                "contact": self.creator.email
-            }
-
-        # see: https://github.com/brianlovesdata/openbadges/wiki/Assertions
-        # TODO: This salt is stable, and the badge.pk is generally not
-        # disclosed anywhere, but is it obscured enough?
-        hash_salt = (hashlib.md5('%s-%s' % (self.badge.pk, self.pk))
+        hash_salt = (hashlib.md5('%s-%s-%s' % (self.badge.pk,
+                                               self.pk,
+                                               settings.SECRET_KEY))
                             .hexdigest())
         recipient_text = '%s%s' % (self.user.email, hash_salt)
         recipient_hash = ('sha256$%s' % hashlib.sha256(recipient_text)
                                                .hexdigest())
         assertion = {
-            "recipient": recipient_hash,
-            "salt": hash_salt,
+            "uid": '%s' % self.id,
+            "recipient": {
+                "type": "email",
+                "hashed": True,
+                "salt": hash_salt,
+                "identity": recipient_hash
+            },
+            "badge": urljoin(base_url,
+                             self.badge.get_absolute_url(format='json')),
+            "verify": {
+                "type": "hosted",
+                "url": urljoin(base_url,
+                               self.get_absolute_url(format='json'))
+            },
             "evidence": urljoin(base_url, self.get_absolute_url()),
+            "issuedOn": calendar.timegm(self.created.utctimetuple()),
             # TODO: implement award expiration
-            # "expires": self.expires.date().isoformat(),
-            "issued_on": self.created.date().isoformat(),
-            "badge": badge_data
+            # "expires": calendar.timegm(self.expires.utctimetuple()),
         }
         return assertion
 

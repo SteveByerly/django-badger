@@ -152,3 +152,12 @@ LOGGING = {
 }
 
 BADGER_TEMPLATE_BASE = 'badger'
+
+BADGER_SITE_ISSUER = {
+    'name': 'Badger Tests',
+    'url': 'http://badges.mozilla.org',
+    'description': 'This is a testing organization',
+    'image': 'http://mozorg.cdn.mozilla.net/media/img/home/firefox-sm.png',
+    'email': 'me@mozilla.org',
+    'revocationList': 'http://badges.mozilla.org/revoke.json',
+}

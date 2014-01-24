@@ -8,10 +8,14 @@ try:
 except ImportError:
     import Image
 
+from urlparse import urljoin
+import hashlib
+
 from django.conf import settings
 
 from django.core.management import call_command
 from django.db.models import loading
+from django.contrib.sites.models import Site
 from django.core.files.base import ContentFile
 from django.http import HttpRequest
 import json
@@ -44,7 +48,8 @@ from badger.models import (Badge, Award, Nomination, Progress, DeferredAward,
         NominationApproveNotAllowedException,
         NominationAcceptNotAllowedException,
         NominationRejectNotAllowedException,
-        SITE_ISSUER, slugify)
+        SITE_ISSUER, DEFAULT_BADGE_IMAGE_URL,
+        slugify)
 
 from badger_example.models import GuestbookEntry
 
@@ -115,6 +120,59 @@ class BadgerBadgeTest(BadgerTestCase):
 
 
 class BadgerOBITest(BadgerTestCase):
+
+    def test_badge_class_data(self):
+
+        # Make a badge with a creator
+        user_creator = self._get_user(username="creator")
+        badge = self._get_badge(title="Badge with Creator",
+                                creator=user_creator)
+
+        base_url = 'http://%s' % (Site.objects.get_current().domain,)
+
+        obi = badge.as_obi_serialization()
+        eq_(obi['name'], badge.title[:128])
+        eq_(obi['description'], badge.description[:128] or self.title[:128])
+        eq_(obi['image'], urljoin(base_url, DEFAULT_BADGE_IMAGE_URL))
+        eq_(obi['criteria'], urljoin(base_url, badge.get_absolute_url()))
+        eq_(obi['issuer'],
+            urljoin(base_url, reverse('badger.site_issuer')))
+        # TODO: tags
+        # TODO: alignment
+        
+    def test_badge_assertion_data(self):
+        user_creator = self._get_user(username="creator")
+        user_awardee = self._get_user(username="awardee_1")
+
+        badge = self._get_badge(title="Badge with Creator",
+                                creator=user_creator)
+        award = badge.award_to(awardee=user_awardee)
+
+        obi = award.as_obi_assertion()
+
+        base_url = 'http://%s' % (Site.objects.get_current().domain,)
+
+        eq_(obi['uid'], '%s' % award.id)
+
+        hash_salt = obi['recipient']['salt']
+        recipient_text = '%s%s' % (award.user.email, hash_salt)
+        recipient_hash = ('sha256$%s' % hashlib.sha256(recipient_text)
+                                               .hexdigest())
+        eq_(obi['recipient']['type'], 'email')
+        ok_(obi['recipient']['hashed'])
+        eq_(obi['recipient']['identity'], recipient_hash)
+
+        eq_(obi['badge'],
+            urljoin(base_url, badge.get_absolute_url(format='json')))
+
+        eq_(obi['verify']['type'], 'hosted')
+        eq_(obi['verify']['url'],
+            urljoin(base_url, award.get_absolute_url(format='json')))
+
+        eq_(type(obi['issuedOn']), int)
+
+        eq_(obi['evidence'],
+            urljoin(base_url, award.get_absolute_url()))
 
     def test_baked_award_image(self):
         """Award gets image baked with OBI assertion"""

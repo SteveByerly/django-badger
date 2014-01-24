@@ -46,6 +46,13 @@ class BadgerViewsTest(BadgerTestCase):
         Award.objects.all().delete()
         Badge.objects.all().delete()
 
+    def test_site_issuer(self):
+        """Can fetch site issuer details"""
+        url = reverse('badger.site_issuer')
+        r = self.client.get(url, follow=True)
+        data = json.loads(r.content)
+        eq_(data, settings.BADGER_SITE_ISSUER)
+
     @attr('json')
     def test_badge_detail(self):
         """Can view badge detail"""
@@ -96,19 +103,19 @@ class BadgerViewsTest(BadgerTestCase):
 
         data = json.loads(r.content)
 
-        hash_salt = (hashlib.md5('%s-%s' % (award.badge.pk, award.pk))
-                            .hexdigest())
+        hash_salt = data['recipient']['salt']
         recipient_text = '%s%s' % (award.user.email, hash_salt)
         recipient_hash = ('sha256$%s' % hashlib.sha256(recipient_text)
                                                .hexdigest())
 
-        eq_(recipient_hash, data['recipient'])
+        eq_('email', data['recipient']['type'])
+        ok_(data['recipient']['hashed'])
+        eq_(recipient_hash, data['recipient']['identity'])
         eq_('http://testserver%s' % award.get_absolute_url(), 
             data['evidence'])
-        eq_(award.badge.title, data['badge']['name'])
-        eq_(award.badge.description, data['badge']['description'])
-        eq_('http://testserver%s' % award.badge.get_absolute_url(), 
-            data['badge']['criteria'])
+        eq_('http://testserver%s' %
+            award.badge.get_absolute_url(format='json'),
+            data['badge'])
 
     def test_awards_by_user(self):
         """Can view awards by user"""

@@ -9,6 +9,7 @@ from . import views
 
 urlpatterns = patterns('badger.views',
     url(r'^$', 'badges_list', name='badger.badges_list'),
+    url(r'^issuer.json$', 'site_issuer', name='badger.site_issuer'),
     url(r'^staff_tools$', 'staff_tools',
         name='badger.staff_tools'),
     url(r'^tag/(?P<tag_name>.+)/?$', 'badges_list',
