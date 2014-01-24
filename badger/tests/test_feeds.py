@@ -1,5 +1,6 @@
 import logging
 import feedparser
+import json
 
 from django.conf import settings
 
@@ -38,12 +39,13 @@ class BadgerFeedsTest(BadgerTestCase):
         Award.objects.all().delete()
         Badge.objects.all().delete()
 
-    def test_award_feeds(self):
-        """Can view award detail"""
+    def test_award_atom_feeds(self):
+        """Can view award atom feeds"""
         user = self._get_user()
         user2 = self._get_user(username='tester2')
 
-        b1, created = Badge.objects.get_or_create(creator=user, title="Code Badge #1")
+        b1, created = Badge.objects.get_or_create(creator=user,
+                                                  title="Code Badge #1")
         award = b1.award_to(user2)
 
         # The award should show up in each of these feeds.
@@ -70,6 +72,71 @@ class BadgerFeedsTest(BadgerTestCase):
                 if b1.title in entry.title and user2.username in entry.title:
                     found_it = True
 
+            ok_(found_it)
+
+    def test_badge_json_feeds(self):
+        user = self._get_user()
+        user2 = self._get_user(username='tester2')
+
+        b1, created = Badge.objects.get_or_create(creator=user,
+                                                  title="Code Badge #1")
+
+        # The award should show up in each of these feeds.
+        feed_urls = (
+            reverse('badger.feeds.badges_recent', 
+                    args=('json', )),
+        )
+
+        # Check each of the feeds
+        for feed_url in feed_urls:
+            r = self.client.get(feed_url, follow=True)
+
+            # The feed should be parsed without issues by feedparser
+            feed = json.loads(r.content)
+
+            ok_('badges' in feed)
+            b1_url = ('http://testserver%s' %
+                      b1.get_absolute_url())
+            found_it = False
+            for badge in feed['badges']:
+                if badge['criteria'] == b1_url:
+                    found_it = True
+            
+            ok_(found_it)
+
+    def test_award_json_feeds(self):
+        user = self._get_user()
+        user2 = self._get_user(username='tester2')
+
+        b1, created = Badge.objects.get_or_create(creator=user,
+                                                  title="Code Badge #1")
+        award = b1.award_to(user2)
+
+        # The award should show up in each of these feeds.
+        feed_urls = (
+            reverse('badger.feeds.awards_recent', 
+                    args=('json', )),
+            reverse('badger.feeds.awards_by_badge', 
+                    args=('json', b1.slug, )),
+            reverse('badger.feeds.awards_by_user',
+                    args=('json', user2.username,)),
+        )
+
+        # Check each of the feeds
+        for feed_url in feed_urls:
+            r = self.client.get(feed_url, follow=True)
+
+            # The feed should be parsed without issues by feedparser
+            feed = json.loads(r.content)
+
+            ok_('badges' in feed)
+            b1_url = ('http://testserver%s' %
+                      b1.get_absolute_url(format='json'))
+            found_it = False
+            for badge in feed['badges']:
+                if badge['badge'] == b1_url:
+                    found_it = True
+            
             ok_(found_it)
 
     def _get_user(self, username="tester", email="tester@example.com",

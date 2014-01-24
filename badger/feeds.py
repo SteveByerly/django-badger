@@ -1,4 +1,5 @@
 """Feeds for badge"""
+import logging
 import datetime
 import hashlib
 import urllib
@@ -28,13 +29,13 @@ from .models import (Badge, Award, Nomination, Progress,
                      DEFAULT_BADGE_IMAGE)
 
 
-MAX_FEED_ITEMS = getattr(settings, 'BADGER_MAX_FEED_ITEMS', 15)
+MAX_FEED_ITEMS = getattr(settings, 'BADGER_MAX_FEED_ITEMS', 50)
 
 
-class BaseJSONFeedGenerator(SyndicationFeed):
-    """JSON feed generator"""
-    # TODO:liberate - Can this class be a generally-useful lib?
+class OBIJSONFeedGenerator(SyndicationFeed):
+    """OBI JSON feed generator"""
 
+    serialization_method = 'as_obi_assertion'
     mime_type = 'application/json'
 
     def _encode_complex(self, obj):
@@ -42,20 +43,11 @@ class BaseJSONFeedGenerator(SyndicationFeed):
             return obj.isoformat()
 
     def build_item(self, item):
-        """Simple base item formatter.
-        Omit some named keys and any keys with false-y values"""
-        omit_keys = ('obj', 'unique_id', )
-        return dict((k, v) for k, v in item.items()
-                    if v and k not in omit_keys)
+        request = self.feed['request']
+        return getattr(item['obj'], self.serialization_method)(request)
 
     def build_feed(self):
-        """Simple base feed formatter.
-        Omit some named keys and any keys with false-y values"""
-        omit_keys = ('obj', 'request', 'id', )
-        feed_data = dict((k, v) for k, v in self.feed.items()
-                         if v and k not in omit_keys)
-        feed_data['items'] = [self.build_item(item) for item in self.items]
-        return feed_data
+        return dict(badges=[self.build_item(item) for item in self.items])
 
     def write(self, outfile, encoding):
         request = self.feed['request']
@@ -80,7 +72,7 @@ class BaseFeed(Feed):
     and other niceties"""
     # TODO:liberate - Can this class be a generally-useful lib?
 
-    json_feed_generator = BaseJSONFeedGenerator
+    json_feed_generator = OBIJSONFeedGenerator
     rss_feed_generator = Rss201rev2Feed
     atom_feed_generator = Atom1Feed
 
@@ -136,8 +128,8 @@ class BaseFeed(Feed):
         )
 
 
-class AwardActivityStreamJSONFeedGenerator(BaseJSONFeedGenerator):
-    pass
+class AwardActivityStreamJSONFeedGenerator(OBIJSONFeedGenerator):
+    serialization_method = 'as_obi_assertion'
 
 
 class AwardActivityStreamAtomFeedGenerator(Atom1Feed):
@@ -216,8 +208,8 @@ class AwardsByBadgeFeed(AwardsFeed):
                 .all()[:MAX_FEED_ITEMS])
 
 
-class BadgesJSONFeedGenerator(BaseJSONFeedGenerator):
-    pass
+class BadgesJSONFeedGenerator(OBIJSONFeedGenerator):
+    serialization_method = 'as_obi_serialization'
 
 
 class BadgesFeed(BaseFeed):
